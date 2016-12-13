@@ -287,7 +287,8 @@ class AccountBankStatementLine(models.Model):
 
     @api.multi
     def unlink(self):
-
+        if not self:
+            return True
         if self._context.get('block_statement_line_delete', False):
             raise Warning(
                 _("Delete operation not allowed ! "
