@@ -193,7 +193,7 @@ class trial_balance_period_xls_parser(report_sxw.rml_parse):
                     credit = _total(i, p, 'credit')
                     period_data['debit'] = debit
                     period_data['credit'] = credit
-                    if debit or credit:
+                    if debit or credit or entry.get('top'):
                         zeros = False
                 entry['zeros'] = zeros
 
