@@ -898,7 +898,9 @@ class AccountCodaImport(models.TransientModel):
             if journal.default_debit_account_id and \
                     (journal.default_credit_account_id
                      == journal.default_debit_account_id):
-                balance_start_check = journal.default_debit_account_id.balance
+                balance_start_check = (
+                    journal.default_debit_account_id.with_context(
+                        prefetch_fields=False).balance)
             else:
                 self._nb_err += 1
                 self._err_string += _(
