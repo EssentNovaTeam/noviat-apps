@@ -719,6 +719,42 @@ class AccountCodaImport(models.TransientModel):
 
         return coda_parsing_note, st_line_seq
 
+    def _coda_record_8_period_id(self, coda_statement):
+        """ Determine the period for a coda record 8 type. """
+        cba = coda_statement['coda_bank_params']
+        if coda_statement.get('new_balance_date', False):
+            periods = self.env['account.period'].search(
+                [('date_start', '<=', coda_statement['new_balance_date']),
+                 ('date_stop', '>=', coda_statement['new_balance_date']),
+                 ('special', '=', False),
+                 ('company_id', '=', cba.company_id.id)])
+        else:
+            periods = self.env['account.period'].search(
+                [('date_start', '<=', coda_statement['date']),
+                 ('date_stop', '>=', coda_statement['date']),
+                 ('special', '=', False),
+                 ('company_id', '=', cba.company_id.id)])
+        period_id = periods and periods[0].id
+        if coda_statement['type'] == 'normal':
+            if not period_id:
+                err_string = _(
+                    "\nThe CODA Statement New Balance date doesn't fall "
+                    "within a defined Accounting Period !"
+                    "\nPlease create the Accounting Period for date %s."
+                    ) % coda_statement['new_balance_date']
+                raise Warning(_('Data Error !'), err_string)
+            else:
+                period = self.env['account.period'].browse(period_id)
+                if period.state == 'done':
+                    err_string = _(
+                        "\nYou cannot load the CODA Statement "
+                        "in a closed Accounting Period !"
+                        "\nPlease select another Accounting Period or "
+                        "reopen period %s."
+                        ) % period.code
+                    raise Warning(err_string)
+        return period_id
+
     def _coda_record_8(self, coda_statement, line, coda_parsing_note,
                        st_line_seq, period_id):
 
@@ -755,37 +791,7 @@ class AccountCodaImport(models.TransientModel):
         coda_statement['balance_end_real'] = bal_end
 
         if not period_id:
-            if coda_statement['new_balance_date']:
-                periods = self.env['account.period'].search(
-                    [('date_start', '<=', coda_statement['new_balance_date']),
-                     ('date_stop', '>=', coda_statement['new_balance_date']),
-                     ('special', '=', False),
-                     ('company_id', '=', cba.company_id.id)])
-            else:
-                periods = self.env['account.period'].search(
-                    [('date_start', '<=', coda_statement['date']),
-                     ('date_stop', '>=', coda_statement['date']),
-                     ('special', '=', False),
-                     ('company_id', '=', cba.company_id.id)])
-            period_id = periods and periods[0].id
-        if coda_statement['type'] == 'normal':
-            if not period_id:
-                err_string = _(
-                    "\nThe CODA Statement New Balance date doesn't fall "
-                    "within a defined Accounting Period !"
-                    "\nPlease create the Accounting Period for date %s."
-                    ) % coda_statement['new_balance_date']
-                raise Warning(_('Data Error !'), err_string)
-            else:
-                period = self.env['account.period'].browse(period_id)
-                if period.state == 'done':
-                    err_string = _(
-                        "\nYou cannot load the CODA Statement "
-                        "in a closed Accounting Period !"
-                        "\nPlease select another Accounting Period or "
-                        "reopen period %s."
-                        ) % period.code
-                    raise Warning(err_string)
+            period_id = self._coda_record_8_period_id(coda_statement)
         coda_statement['period_id'] = period_id
 
         # update coda_statement['name'] with data from 8 record
@@ -1403,7 +1409,7 @@ class AccountCodaImport(models.TransientModel):
 
             bank_st = coda_st = False
             cba = coda_statement['coda_bank_params']
-            self._coda_statement_hook(coda_statement)
+            self._coda_statement_hook(coda_statement, period_id)
             discard = self._check_duplicate(coda_statement)
 
             if coda_statement['type'] == 'info':
@@ -2076,7 +2082,7 @@ class AccountCodaImport(models.TransientModel):
         once a specific statement has been identified in a coda file.
         """
 
-    def _coda_statement_hook(self, coda_statement):
+    def _coda_statement_hook(self, coda_statement, period_id=None):
         """
         Use this method to take customer specific actions
         after the creation of the 'coda_statement' dict by the parsing engine.
